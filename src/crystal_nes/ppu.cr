@@ -11,7 +11,7 @@ module CrystalNes
                    @cpu : CrystalNes::Cpu)
       @memory = CrystalNes::Ppu::Memory.new(@mapper)
       @front = LibRay::RenderTexture2D.new()
-      @back = Slice(UInt32).new(256 * 240, 0x000000FF_u32)
+      @back = Slice(LibRay::Color).new(256 * 240, LibRay::BLACK)
 
       @scanline = 0
       @cycle = 0
@@ -126,7 +126,9 @@ module CrystalNes
     end
 
     private def render()
-      return if @mask.enable_background == 0 && @mask.enable_sprite == 0
+      x = (@cycle - 1)
+      y = @scanline
+
       bg_pixel = 0_u16
       bg_palette = 0_u16
 
@@ -142,10 +144,10 @@ module CrystalNes
         bg_palette = (bg_pal1 << 1) | bg_pal0
       end
 
-      pal_idx = @memory.read(0x3F00_u16 | (bg_palette << 2) | bg_pixel) &
+      bg_pixel = 0 if x < 8 && @mask.render_background_left == 0
+
+      pal_idx = @memory.read(0x3F00 + (bg_palette << 2) + bg_pixel) &
         (@mask.grayscale > 0 ? 0x30 : 0x3F)
-      x = (@cycle - 1)
-      y = @scanline
       @back[x + (y * 256)] = Palette.fetch(pal_idx)
     end
 

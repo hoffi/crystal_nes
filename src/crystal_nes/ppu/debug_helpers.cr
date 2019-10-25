@@ -2,13 +2,13 @@ module CrystalNes
   class Ppu
     module DebugHelpers
       def get_palette_colors(palette)
-        StaticArray(UInt32, 4).new do |i|
+        StaticArray(LibRay::Color, 4).new do |i|
           Palette.fetch(@memory.read(0x3F00 + (palette << 2) + i) & 0x3F)
         end
       end
 
       def draw_pattern_table(table, palette, texture)
-        texture_data = Slice(UInt32).new(128 * 128)
+        texture_data = Slice(LibRay::Color).new(128 * 128, LibRay::BLACK)
         16.times do |tile_y|
           16.times do |tile_x|
             # 2D -> 1D

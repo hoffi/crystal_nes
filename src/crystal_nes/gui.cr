@@ -17,9 +17,6 @@ module CrystalNes
       time = 0
 
       while !LibRay.window_should_close?
-        LibRay.begin_drawing
-        LibRay.clear_background(LibRay::BLACK)
-
         if @step || @run
           if @step
             @console.step
@@ -29,7 +26,13 @@ module CrystalNes
           end
         end
 
-        LibRay.draw_texture_ex(@console.game_view, LibRay::Vector2.new(x: 0, y: 0), 0, 2, LibRay::WHITE)
+        LibRay.begin_drawing
+        LibRay.clear_background(LibRay::BLACK)
+
+        LibRay.draw_texture_ex(
+          @console.game_view, LibRay::Vector2.new(x: 0, y: 0), 0, 2,
+          LibRay::WHITE
+        )
 
         LibRay.draw_text(
           "STATUS: N V - B D I Z C",
@@ -76,8 +79,7 @@ module CrystalNes
           LibRay.draw_text(i.to_s, 525 + (60 * i), 165, 9, LibRay::WHITE)
 
           colors = @console.ppu.get_palette_colors(i)
-          colors.each.with_index do |raw, idx|
-            color = LibRay.get_color(raw)
+          colors.each.with_index do |color, idx|
             LibRay.draw_rectangle(535 + (10 * idx) + (60 * i), 165, 9, 9, color)
           end
         end
@@ -86,8 +88,7 @@ module CrystalNes
           LibRay.draw_text((i + 4).to_s, 525 + (60 * i), 175, 9, LibRay::WHITE)
 
           colors = @console.ppu.get_palette_colors(i + 4)
-          colors.each.with_index do |raw, idx|
-            color = LibRay.get_color(raw)
+          colors.each.with_index do |color, idx|
             LibRay.draw_rectangle(535 + (10 * idx) + (60 * i), 175, 9, 9, color)
           end
         end
@@ -103,7 +104,6 @@ module CrystalNes
         x = 0
         y = 0
         CrystalNes::Palette::PALETTE.each do |color|
-          color = LibRay.get_color(color)
           LibRay.draw_rectangle(780 + (10 * x), 155 + (10 * y), 9, 9, color)
           if x >= 15
             x = 0

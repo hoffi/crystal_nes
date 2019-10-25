@@ -10,7 +10,7 @@ A NES Emulator written in [Crystal](https://crystal-lang.org)
 - [ ] Complete CPU (with unofficial opcodes and tests)
 - [x] Controller
 - [ ] PPU
-  - [ ] Basic background rendering (works but colors are wrong)
+  - [x] Basic background rendering
   - [ ] Sprite rendering
   - [ ] Correct timings
 - [ ] APU
