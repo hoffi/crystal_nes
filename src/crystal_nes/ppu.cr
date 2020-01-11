@@ -53,8 +53,6 @@ module CrystalNes
       @bg_attribute_shifter_hi = 0_u16
     end
 
-    def set_mirror_mode(mode : MirrorMode); @bus.mirror_mode = mode; end
-
     def step
       # "Odd Frame", skip cycle
       return @cycle = 1 if @frame_toggle && @scanline == 0 && @cycle == 0

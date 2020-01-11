@@ -9,6 +9,8 @@ module CrystalNes
       @chr_rom : Bytes
 
       def initialize(rom_data)
+        super(rom_data)
+
         @prg_rom = rom_data.prg_rom
         @chr_rom = rom_data.chr_rom
 

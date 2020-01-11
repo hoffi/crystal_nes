@@ -19,7 +19,6 @@ module CrystalNes
     def insert_rom_file(rom_path)
       rom_data = File.open(rom_path, "rb").read_bytes(FileFormats::Nes)
       @mapper.prepare_mapper(rom_data)
-      @ppu.set_mirror_mode rom_data.mirror_mode
       @cpu.power_up!
     end
 

@@ -4,7 +4,7 @@ module CrystalNes
       @mapper_backend = uninitialized MapperBackend::Base
     end
 
-    delegate read, write, to: @mapper_backend
+    delegate read, write, mirror_mode, to: @mapper_backend
 
     def prepare_mapper(rom_data)
       @mapper_backend =

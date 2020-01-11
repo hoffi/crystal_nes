@@ -1,10 +1,7 @@
 module CrystalNes
   class Ppu < BusDevice
     class PpuBus
-      setter mirror_mode
-
       def initialize(@mapper : Mapper)
-        @mirror_mode = MirrorMode::Horizontal
         @nametable = Bytes.new(2048, 0_u8)
         @palette_indices = Bytes.new(32, 0x3F_u8)
       end
@@ -26,7 +23,7 @@ module CrystalNes
           address &= 0x0FFF
           table = (address // 0x0400)
           offset = address & 0x03FF
-          base_addr = MIRRORING_LOOKUP_TABLE[@mirror_mode][table] * 1024
+          base_addr = MIRRORING_LOOKUP_TABLE[@mapper.mirror_mode][table] * 1024
           @nametable[base_addr + offset]
         elsif address >= 0x3F00 && address <= 0x3FFF
           # Palette Indices
@@ -48,7 +45,7 @@ module CrystalNes
           address &= 0x0FFF
           table = (address // 0x0400)
           offset = address & 0x03FF
-          base_addr = MIRRORING_LOOKUP_TABLE[@mirror_mode][table] * 1024
+          base_addr = MIRRORING_LOOKUP_TABLE[@mapper.mirror_mode][table] * 1024
           @nametable[base_addr + offset] = data
         elsif address >= 0x3F00 && address <= 0x3FFF
           # Palette Indices
