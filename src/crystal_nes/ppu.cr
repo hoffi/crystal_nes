@@ -1,216 +1,239 @@
 require "./ppu/*"
 
 module CrystalNes
-  class Ppu
-    include Registers
-    include DebugHelpers
+  class Ppu < BusDevice
+    include MainBusInterface
 
-    getter front, memory
+    MAX_HEIGHT = 256
+    MAX_WIDTH = 240
+    INTERNAL_SCREEN_SIZE = MAX_HEIGHT * MAX_WIDTH
 
-    def initialize(@mapper : CrystalNes::Mappers::Base,
-                   @cpu : CrystalNes::Cpu)
-      @memory = CrystalNes::Ppu::Memory.new(@mapper)
-      @front = LibRay::RenderTexture2D.new()
-      @back = Slice(LibRay::Color).new(256 * 240, LibRay::BLACK)
+    alias PixelBuffer = Slice(UInt32)
 
-      @scanline = 0
-      @cycle = 0
-      @frame = 0
+    getter nmi_triggered, bus
+    setter swap_pixel_buffer_callback, nmi_triggered
 
-      @vram_addr = Loopy.new(0)
-      @tram_addr = Loopy.new(0)
-      @ppu_data_buffer = 0_u8
+    @swap_pixel_buffer_callback : PixelBuffer -> Void = ->(b : PixelBuffer) {}
+
+    def initialize(@mapper : Mapper)
+      # The PPU has a custom bus.
+      @bus = PpuBus.new(@mapper)
+
+      @palette = Palette.new
+      @pixel_buffer = PixelBuffer.new(INTERNAL_SCREEN_SIZE, 0_u32)
+
+      # Registers
+      # See http://wiki.nesdev.com/w/index.php/PPU_power_up_state for initial
+      # values.
+      @control = Ppu::ControlRegister.new(Bytes[0])
+      @mask = Ppu::MaskRegister.new(Bytes[0])
+      @status = Ppu::StatusRegister.new(Bytes[0xA0])
+      @v = Ppu::LoopyRegister.new(Bytes[0, 0])
+      @t = Ppu::LoopyRegister.new(Bytes[0, 0])
       @x_scroll = 0_u8
 
-      @control = Control.new(0)
-      @mask = Mask.new(0)
-      @status = Status.new(0b10100000)
+      @nmi_delay = 0_u8
 
       @write_toggle = false
-      @last_register_value = 0_u8
-      @write_lock = false
+      @ppu_data_buffer = 0_u8
+      @register_latch = 0_u8
 
-      @bg_next_tile_id = 0_u8
-      @bg_next_tile_attribute = 0_u8
-      @bg_next_tile_lsb = 0_u8
-      @bg_next_tile_msb = 0_u8
+      @nmi_triggered = false
+      @frame_toggle = false
+      @cycle = 0
+      @scanline = 0
 
-      @bg_shifter_pattern_lo = 0_u16
-      @bg_shifter_pattern_hi = 0_u16
-      @bg_shifter_attrib_lo = 0_u16
-      @bg_shifter_attrib_hi = 0_u16
+      @bg_nametable_byte = 0_u8
+      @bg_attribute_table_byte = 0_u8
+      @bg_tile_lo = 0_u8
+      @bg_tile_hi = 0_u8
+      @bg_tile_shifter_lo = 0_u16
+      @bg_tile_shifter_hi = 0_u16
+      @bg_attribute_shifter_lo = 0_u16
+      @bg_attribute_shifter_hi = 0_u16
     end
 
-    def init_front_buffer()
-      @front = LibRay.load_render_texture(256, 240)
-      LibRay.update_texture(@front.texture, @back)
-    end
+    def set_mirror_mode(mode : MirrorMode); @bus.mirror_mode = mode; end
 
-    def step()
+    def step
       # "Odd Frame", skip cycle
-      @cycle = 1 if @scanline == 0 && @cycle == 0
+      return @cycle = 1 if @frame_toggle && @scanline == 0 && @cycle == 0
 
-      # Start of new frame. Clear VBlank-Flag
-      @status.vblank = 0 if @scanline == -1 && @cycle == 1
+      if @nmi_delay > 0
+        @nmi_delay -= 1
+        if @nmi_delay == 0
+          @nmi_triggered = true
+        end
+      end
 
-      if @scanline < 240 && (@mask.enable_background == 1 || @mask.enable_sprite == 1)
+      # Start of new frame. Clear the status register flags.
+      if @scanline == 261 && @cycle == 1
+        @status.vblank = 0
+        @status.sprite_zero_hit = 0
+        @status.sprite_overflow = 0
+      end
+
+      copy_y if @scanline == 261 && @cycle >= 280 && @cycle < 305
+
+      if (@scanline < 240 || @scanline == 261) &&
+         (@mask.background_enable == 1 || @mask.sprite_enable == 1)
         if (@cycle >= 2 && @cycle < 257) || (@cycle >= 321 && @cycle < 338)
-          update_shifters()
+          update_shifters
 
-          case ((@cycle - 1) % 8)
-          when 0 then
-            load_background_shifters()
-            fetch_nametable_byte()
-          when 2 then fetch_attribute_byte()
-          when 4 then fetch_tile_byte(:low)
-          when 6 then fetch_tile_byte(:high)
-          when 7 then increment_scroll_x()
+          case (@cycle - 1) % 8
+          when 0 then load_bg_shifters; fetch_nametable_byte
+          when 2 then fetch_attribute_table_byte
+          when 4 then fetch_tile_byte :low
+          when 6 then fetch_tile_byte :high
+          when 7 then increment_scroll_x
           end
         end
 
-        increment_scroll_y() if @cycle == 256
+        increment_scroll_y if @cycle == 256
 
         if @cycle == 257
-          load_background_shifters()
-          copy_x()
+          load_bg_shifters
+          copy_x
         end
 
-        fetch_nametable_byte() if @cycle == 338 || @cycle == 340
+        fetch_nametable_byte if @cycle == 338 || @cycle == 340
 
-        copy_y() if @scanline == -1 && @cycle >= 280 && @cycle < 305
+        render_pixel if @scanline < 240 && @cycle <= 256
       end
 
-      render() if @scanline >= 0 && @scanline < 240 && @cycle <= 256
-
       if @scanline == 241 && @cycle == 1
-        LibRay.update_texture(@front.texture, @back)
+        @swap_pixel_buffer_callback.call(@pixel_buffer)
         @status.vblank = 1
-        @cpu.trigger_nmi() if @control.enable_nmi == 1
+        # TODO: This should not be necessary.
+        # This delay seems to fix the timing of the NMI.
+        # @nmi_triggered = true if @control.nmi_enable == 1
+        @nmi_delay = 880 if @control.nmi_enable == 1
       end
 
       @cycle += 1
-      if @cycle >= 341
+      if @cycle == 341
         @cycle = 0
         @scanline += 1
-        if @scanline >= 261
-          @scanline = -1
+        if @scanline == 262
+          @scanline = 0
+          @frame_toggle = !@frame_toggle
         end
       end
     end
 
-    private def fetch_nametable_byte()
-      @bg_next_tile_id = @memory.read(0x2000 | (@vram_addr.value & 0x0FFF))
+    def render_pixel
+      x = @cycle - 1
+      y = @scanline
+
+      bg_pixel = 0_u8
+      bg_palette = 0_u8
+
+      skip_left_bg = (x < 8 && @mask.background_left_column_enable == 0)
+      if @mask.background_enable == 1 && !skip_left_bg
+        bit_mux = 0x8000_u16 >> @x_scroll
+
+        pixel0 = (@bg_tile_shifter_lo & bit_mux) > 0 ? 1 : 0
+        pixel1 = (@bg_tile_shifter_hi & bit_mux) > 0 ? 1 : 0
+        bg_pixel = (pixel1 << 1) | pixel0
+
+        palette0 = (@bg_attribute_shifter_lo & bit_mux) > 0 ? 1 : 0
+        palette1 = (@bg_attribute_shifter_hi & bit_mux) > 0 ? 1 : 0
+        bg_palette = (palette1 << 1) | palette0
+      end
+
+      pal_idx = @bus.read(0x3F00_u16 | (bg_palette << 2) | bg_pixel) &
+        (@mask.greyscale == 1 ? 0x30 : 0x3F)
+      @pixel_buffer[x + (y * MAX_HEIGHT)] = @palette.fetch(pal_idx)
     end
 
-    private def fetch_attribute_byte()
-      @bg_next_tile_attribute =
-        @memory.read(0x23C0_u16 | (
-                     (@vram_addr.nametable_y.to_u16 << 11) |
-                     (@vram_addr.nametable_x.to_u16 << 10) |
-                     ((@vram_addr.coarse_y.to_u16 >> 2) << 3) |
-                     (@vram_addr.coarse_x.to_u16 >> 2)))
-      @bg_next_tile_attribute >>= 4 if (@vram_addr.coarse_y & 2) >= 1
-      @bg_next_tile_attribute >>= 2 if (@vram_addr.coarse_x & 2) >= 1
-      @bg_next_tile_attribute &= 3
+    private def fetch_nametable_byte
+      @bg_nametable_byte = @bus.read(0x2000_u16 | (@v.to_u16 & 0x0FFF))
+    end
+
+    private def fetch_attribute_table_byte
+      @bg_attribute_table_byte =
+        @bus.read(
+          0x23C0_u16 |
+            (@v.nametable_y.to_u16 << 11) |
+            (@v.nametable_x.to_u16 << 10) |
+            ((@v.coarse_y >> 2) << 3) |
+            (@v.coarse_x >> 2)
+        )
+
+      @bg_attribute_table_byte >>= 4 if (@v.coarse_y & 2) >= 1
+      @bg_attribute_table_byte >>= 2 if (@v.coarse_x & 2) >= 1
+      @bg_attribute_table_byte &= 3
     end
 
     private def fetch_tile_byte(mode)
-      addr = (@control.pattern_background.to_u16 << 12) +
-              (@bg_next_tile_id.to_u16 << 4) +
-              @vram_addr.fine_y
+      addr = (@control.background_tile.to_u16 << 12) |
+        (@bg_nametable_byte.to_u16 << 4) |
+        @v.fine_y
 
       case mode
-      when :low  then @bg_next_tile_lsb = @memory.read(addr)
-      when :high then @bg_next_tile_msb = @memory.read(addr + 8_u16)
+      when :low  then @bg_tile_lo = @bus.read(addr)
+      when :high then @bg_tile_hi = @bus.read(addr + 8_u16)
       end
-    end
-
-    private def render()
-      x = (@cycle - 1)
-      y = @scanline
-
-      bg_pixel = 0_u16
-      bg_palette = 0_u16
-
-      if @mask.enable_background == 1
-        bit_mux = 0x8000_u16 >> @x_scroll
-
-        p0_pixel = (@bg_shifter_pattern_lo & bit_mux) > 0 ? 1 : 0
-        p1_pixel = (@bg_shifter_pattern_hi & bit_mux) > 0 ? 1 : 0
-        bg_pixel = (p1_pixel << 1) | p0_pixel
-
-        bg_pal0 = (@bg_shifter_attrib_lo & bit_mux) > 0 ? 1 : 0
-        bg_pal1 = (@bg_shifter_attrib_hi & bit_mux) > 0 ? 1 : 0
-        bg_palette = (bg_pal1 << 1) | bg_pal0
-      end
-
-      bg_pixel = 0 if x < 8 && @mask.render_background_left == 0
-
-      pal_idx = @memory.read(0x3F00 + (bg_palette << 2) + bg_pixel) &
-        (@mask.grayscale > 0 ? 0x30 : 0x3F)
-      @back[x + (y * 256)] = Palette.fetch(pal_idx)
-    end
-
-    private def load_background_shifters
-      @bg_shifter_pattern_lo = (@bg_shifter_pattern_lo & 0xFF00) |
-                               @bg_next_tile_lsb
-      @bg_shifter_pattern_hi = (@bg_shifter_pattern_hi & 0xFF00) |
-                               @bg_next_tile_msb
-
-      @bg_shifter_attrib_lo = (@bg_shifter_attrib_lo & 0xFF00) |
-                               ((@bg_next_tile_attribute & 1) > 0 ? 0xFF : 0x00)
-      @bg_shifter_attrib_hi = (@bg_shifter_attrib_hi & 0xFF00) |
-                               ((@bg_next_tile_attribute & 2) > 0 ? 0xFF : 0x00)
     end
 
     private def update_shifters
-      return if @mask.enable_background == 0
-      @bg_shifter_pattern_lo <<= 1
-      @bg_shifter_pattern_hi <<= 1
+      if @mask.background_enable == 1
+        @bg_tile_shifter_lo <<= 1
+        @bg_tile_shifter_hi <<= 1
+        @bg_attribute_shifter_lo <<= 1
+        @bg_attribute_shifter_hi <<= 1
+      end
+    end
 
-      @bg_shifter_attrib_lo <<= 1
-      @bg_shifter_attrib_hi <<= 1
+    private def load_bg_shifters
+      @bg_tile_shifter_lo = (@bg_tile_shifter_lo & 0xFF00) | @bg_tile_lo
+      @bg_tile_shifter_hi = (@bg_tile_shifter_hi & 0xFF00) | @bg_tile_hi
+
+      @bg_attribute_shifter_lo = (@bg_attribute_shifter_lo & 0xFF00) |
+                                 ((@bg_attribute_table_byte & 0b01) > 0 ? 0xFF_u16 : 0_u16)
+      @bg_attribute_shifter_hi = (@bg_attribute_shifter_hi & 0xFF00) |
+                                 ((@bg_attribute_table_byte & 0b10) > 0 ? 0xFF_u16 : 0_u16)
     end
 
     private def increment_scroll_x
-      return if @mask.enable_background == 0 && @mask.enable_sprite == 0
-      if @vram_addr.coarse_x == 31
-        @vram_addr.coarse_x = 0
-        @vram_addr.nametable_x = ~@vram_addr.nametable_x
+      return if @mask.background_enable == 0 && @mask.sprite_enable == 0
+      if @v.coarse_x == 31
+        @v.coarse_x = 0
+        @v.nametable_x = ~@v.nametable_x
       else
-        @vram_addr.coarse_x += 1
+        @v.coarse_x += 1
       end
     end
 
     private def increment_scroll_y
-      return if @mask.enable_background == 0 && @mask.enable_sprite == 0
-      if @vram_addr.fine_y < 7
-        @vram_addr.fine_y += 1
+      return if @mask.background_enable == 0 && @mask.sprite_enable == 0
+      if @v.fine_y < 7
+        @v.fine_y += 1
       else
-        @vram_addr.fine_y = 0
+        @v.fine_y = 0
 
-        if @vram_addr.coarse_y == 29
-          @vram_addr.coarse_y = 0
-          @vram_addr.nametable_y = ~@vram_addr.nametable_y
-        elsif @vram_addr.coarse_y == 31
-          @vram_addr.coarse_y = 0
+        if @v.coarse_y == 29
+          @v.coarse_y = 0
+          @v.nametable_y = ~@v.nametable_y
+        elsif @v.coarse_y == 31
+          @v.coarse_y = 0
         else
-          @vram_addr.coarse_y += 1
+          @v.coarse_y += 1
         end
       end
     end
 
     private def copy_x
-      return if @mask.enable_background == 0 && @mask.enable_sprite == 0
-      @vram_addr.nametable_x = @tram_addr.nametable_x
-      @vram_addr.coarse_x = @tram_addr.coarse_x
+      return if @mask.background_enable == 0 && @mask.sprite_enable == 0
+      @v.nametable_x = @t.nametable_x
+      @v.coarse_x = @t.coarse_x
     end
 
     private def copy_y
-      return if @mask.enable_background == 0 && @mask.enable_sprite == 0
-      @vram_addr.fine_y = @tram_addr.fine_y
-      @vram_addr.nametable_y = @tram_addr.nametable_y
-      @vram_addr.coarse_y = @tram_addr.coarse_y
+      return if @mask.background_enable == 0 && @mask.sprite_enable == 0
+      @v.fine_y = @t.fine_y
+      @v.nametable_y = @t.nametable_y
+      @v.coarse_y = @t.coarse_y
     end
   end
 end

@@ -8,13 +8,16 @@ targets:
   crystal_nes:
     main: main.cr
 
-crystal: 0.30.1
+crystal: 0.32.1
 
 license: BSD-3-Clause
 
-libraries:
-  libraylib: "*"
-
 dependencies:
+  debug:
+    github: Sija/debug.cr
+  bindata:
+    github: spider-gazelle/bindata
+  bitfields:
+    github: elorest/bitfields
   cray:
     gitlab: zatherz/cray

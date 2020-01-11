@@ -1,44 +1,61 @@
 module CrystalNes
   class Console
-    getter :ppu, :cpu, :controller
+    getter cpu, ppu, bus, controller
+    setter cpu
 
-    @mapper : Mappers::Base
+    def initialize
+      @mapper = Mapper.new
+      @ppu = Ppu.new(@mapper)
+      @controller = Controller.new
 
-    def initialize(@cartridge : Cartridge)
-      @controller = CrystalNes::Controller.new
-      @mapper = initialize_mapper(@cartridge.mapper_number)
-      @memory = CrystalNes::Memory.new(@mapper, @controller)
-      @cpu = CrystalNes::Cpu.new(@memory)
-      @ppu = CrystalNes::Ppu.new(@mapper, @cpu)
-      @memory.ppu = @ppu
+      @bus = Bus.new(@mapper, @ppu, @controller)
+      @cpu = Cpu.new(@bus)
+    end
+
+    def on_swap_pixel_buffer(&block : Ppu::PixelBuffer -> Void)
+      @ppu.swap_pixel_buffer_callback = block
+    end
+
+    def insert_rom_file(rom_path)
+      rom_data = File.open(rom_path, "rb").read_bytes(FileFormats::Nes)
+      @mapper.prepare_mapper(rom_data)
+      @ppu.set_mirror_mode rom_data.mirror_mode
+      @cpu.power_up!
     end
 
     def step
       cpu_cycles = @cpu.step
 
-      ppu_cycles = cpu_cycles * 3
-      ppu_cycles.times { @ppu.step }
+      # Handle NMIs triggered by a CPU write to the PPU
+      handle_nmi
+
+      (cpu_cycles * 3).times do
+        @ppu.step
+        break if handle_nmi
+      end
+
+      cpu_cycles
+    end
+
+    def reset!
+      @cpu.reset!
     end
 
     def step_by_frame
-      29781.times { step }
+      # http://wiki.nesdev.com/w/index.php/Cycle_reference_chart#Clock_rates
+      cycles_per_frame = 29781
+      while cycles_per_frame > 0
+        cycles_per_frame -= step
+      end
     end
 
-    def dump_memory
-      io = IO::Hexdump.new(@memory.ram.ram, output: STDOUT, read: true)
-      bytes = Bytes.new(2048)
-      io.read(bytes)
-      io.close
-    end
-
-    def game_view
-      @ppu.front.texture
-    end
-
-    private def initialize_mapper(number)
-      case number
-      when 0 then Mappers::Mapper0.new(@cartridge)
-      else raise "Unknown mapper #{number}!"
+    private def handle_nmi
+      if @ppu.nmi_triggered
+        @ppu.nmi_triggered = false
+        @cpu.pending_interrupt = :nmi
+        true
+      else
+        false
       end
     end
   end
