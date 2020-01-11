@@ -6,8 +6,7 @@ A NES Emulator written in [Crystal](https://crystal-lang.org)
 
 ![Status Screenshot](https://raw.githubusercontent.com/hoffi/crystal_nes/master/screenshot.png)
 
-- [x] Basic CPU (only official opcodes)
-- [ ] Complete CPU (with unofficial opcodes)
+- [x] Complete CPU
 - [x] Controller
 - [ ] PPU
   - [x] Basic background rendering
