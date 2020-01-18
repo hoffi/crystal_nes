@@ -9,6 +9,10 @@ module CrystalNes
           @status.vblank = 0
           @write_toggle = false
           @register_latch = data
+        when 0x2004 then
+          data = @oam[@oam_address]
+          @oam_address &+= 1 if @status.vblank == 0 && !debug
+          data
         when 0x2007 then
           addr = @v.to_u16
           data = @ppu_data_buffer.dup
@@ -48,6 +52,11 @@ module CrystalNes
           @t.nametable_y = @control.nametable_y
         when 0x2001 then
           @mask = Ppu::MaskRegister.new(Bytes[data])
+        when 0x2003 then
+          @oam_address = data
+        when 0x2004 then
+          @oam[@oam_address] = data
+          @oam_address &+= 1
         when 0x2005 then
           if @write_toggle
             @t.fine_y = data & 7
@@ -71,6 +80,14 @@ module CrystalNes
           addr = @v.to_u16
           @bus.write(addr, data)
           @v.from_u16(addr &+ (@control.increment_mode == 1 ? 32 : 1))
+        when 0x4014 then
+          start_addr = data.to_u16 << 8
+          256.times do |i|
+            @oam[@oam_address] = @main_bus.read(start_addr + i, false)
+            @oam_address &+= 1
+          end
+
+          @oam_dma_handler.call
         end
         @register_latch = data
       end

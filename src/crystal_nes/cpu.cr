@@ -17,8 +17,8 @@ module CrystalNes
     @pc : UInt16
     @pending_interrupt : Symbol?
 
-    getter p, pc, sp, a, x, y
-    setter pending_interrupt
+    getter p, pc, sp, a, x, y, cycles
+    setter pending_interrupt, delay
 
     def initialize(@bus : Bus)
       @cycles = 0
@@ -64,6 +64,12 @@ module CrystalNes
       # Reset cycle counter
       @cycles = 0
 
+      # If a delay is set, skip execution and decrement the counter until zero.
+      if @delay > 0
+        @delay -= 1
+        return @cycles
+      end
+
       # Handle interupts first if one is pending.
       if @pending_interrupt == :nmi
         nmi
@@ -71,13 +77,6 @@ module CrystalNes
         irq
       end
       @pending_interrupt = nil
-
-      # If a delay is set, skip execution and decrement the counter until zero.
-      # However interupts will still be handled.
-      if @delay > 0
-        @delay -= 1
-        return @cycles
-      end
 
       # Read the opcode at the current program counter
       opcode = @bus.read(@pc)

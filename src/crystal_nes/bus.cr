@@ -12,6 +12,8 @@ module CrystalNes
         @internal_ram[address % 0x0800]
       elsif address >= 0x2000 && address < 0x4000
         @ppu.read((address & 0x0007) + 0x2000, debug)
+      elsif address == 0x4014
+        @ppu.read(0x4014, debug)
       elsif address >= 0x4000 && address < 0x4016
         0_u8 # TODO: APU Registers
       elsif address >= 0x4016 && address < 0x4018
@@ -29,6 +31,8 @@ module CrystalNes
         @internal_ram[address % 0x0800] = data
       elsif address >= 0x2000 && address < 0x4000
         @ppu.write((address & 0x0007) + 0x2000, data)
+      elsif address == 0x4014
+        @ppu.write(0x4014, data)
       elsif address >= 0x4000 && address < 0x4016
         0_u8 # TODO: APU Registers
       elsif address >= 0x4016 && address < 0x4018

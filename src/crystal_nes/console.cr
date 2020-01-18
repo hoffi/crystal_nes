@@ -10,6 +10,13 @@ module CrystalNes
 
       @bus = Bus.new(@mapper, @ppu, @controller)
       @cpu = Cpu.new(@bus)
+      @ppu.main_bus = @bus
+
+      @ppu.oam_dma_handler = -> {
+        cpu_delay = 513
+        cpu_delay += 1 if (@cpu.cycles % 2) == 1
+        @cpu.delay = cpu_delay
+      }
     end
 
     def on_swap_pixel_buffer(&block : Ppu::PixelBuffer -> Void)

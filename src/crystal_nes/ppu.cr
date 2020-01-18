@@ -11,13 +11,16 @@ module CrystalNes
     alias PixelBuffer = Slice(UInt32)
 
     getter nmi_triggered, bus
-    setter swap_pixel_buffer_callback, nmi_triggered
+    setter swap_pixel_buffer_callback, nmi_triggered, oam_dma_handler, main_bus
 
     @swap_pixel_buffer_callback : PixelBuffer -> Void = ->(b : PixelBuffer) {}
+    @oam_dma_handler : -> Void = ->() {}
+    @main_bus : Bus
 
     def initialize(@mapper : Mapper)
       # The PPU has a custom bus.
       @bus = PpuBus.new(@mapper)
+      @main_bus = uninitialized Bus
 
       @palette = Palette.new
       @pixel_buffer = PixelBuffer.new(INTERNAL_SCREEN_SIZE, 0_u32)
@@ -31,6 +34,15 @@ module CrystalNes
       @v = Ppu::LoopyRegister.new(Bytes[0, 0])
       @t = Ppu::LoopyRegister.new(Bytes[0, 0])
       @x_scroll = 0_u8
+      @oam_address = 0_u8
+      @oam = Bytes.new(256, 0_u8)
+
+      # Sprites
+      @sprite_count = 0
+      @sprite_patterns = Slice(UInt32).new(8, 0_u32)
+      @sprite_positions = Bytes.new(8, 0_u8)
+      @sprite_priorities = Bytes.new(8, 0_u8)
+      @sprite_indexes = Bytes.new(8, 0_u8)
 
       @nmi_delay = 0_u8
 
