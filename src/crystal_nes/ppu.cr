@@ -104,6 +104,7 @@ module CrystalNes
         if @cycle == 257
           load_bg_shifters
           copy_x
+          sprite_evaluation
         end
 
         fetch_nametable_byte if @cycle == 338 || @cycle == 340
@@ -135,25 +136,67 @@ module CrystalNes
       x = @cycle - 1
       y = @scanline
 
-      bg_pixel = 0_u8
-      bg_palette = 0_u8
-
       skip_left_bg = (x < 8 && @mask.background_left_column_enable == 0)
-      if @mask.background_enable == 1 && !skip_left_bg
-        bit_mux = 0x8000_u16 >> @x_scroll
+      skip_left_sprites = (x < 8 && @mask.sprite_left_column_enable == 0)
 
-        pixel0 = (@bg_tile_shifter_lo & bit_mux) > 0 ? 1 : 0
-        pixel1 = (@bg_tile_shifter_hi & bit_mux) > 0 ? 1 : 0
-        bg_pixel = (pixel1 << 1) | pixel0
+      background = skip_left_bg ? 0_u16 : background_pixel
+      sprite_index, sprite = sprite_pixel
+      sprite = 0_u16 if skip_left_sprites
 
-        palette0 = (@bg_attribute_shifter_lo & bit_mux) > 0 ? 1 : 0
-        palette1 = (@bg_attribute_shifter_hi & bit_mux) > 0 ? 1 : 0
-        bg_palette = (palette1 << 1) | palette0
+      b = (background % 4) != 0
+      s = (sprite % 4) != 0
+      color =
+        if !b && !s
+          0x3F00_u16
+        elsif !b && s
+          sprite
+        elsif b && !s
+          background
+        else
+          if @sprite_indexes[sprite_index] == 0 && x < 255
+            @status.sprite_zero_hit = 1
+          end
+
+          if @sprite_priorities[sprite_index] == 0
+            sprite
+          else
+            background
+          end
+        end
+
+      pal = @bus.read(color) & (@mask.greyscale == 1 ? 0x30 : 0x3F)
+      @pixel_buffer[x + (y * MAX_HEIGHT)] = @palette.fetch(pal)
+    end
+
+    private def background_pixel
+      return 0_u16 if @mask.background_enable == 0
+
+      bit_mux = 0x8000_u16 >> @x_scroll
+
+      pixel0 = (@bg_tile_shifter_lo & bit_mux) > 0 ? 1 : 0
+      pixel1 = (@bg_tile_shifter_hi & bit_mux) > 0 ? 1 : 0
+      bg_pixel = (pixel1 << 1) | pixel0
+
+      palette0 = (@bg_attribute_shifter_lo & bit_mux) > 0 ? 1 : 0
+      palette1 = (@bg_attribute_shifter_hi & bit_mux) > 0 ? 1 : 0
+      bg_palette = (palette1 << 1) | palette0
+
+      0x3F00_u16 | (bg_palette << 2) | bg_pixel
+    end
+
+    private def sprite_pixel
+      return [0_u8, 0_u16] if @mask.sprite_enable == 0
+
+      @sprite_count.times do |i|
+        offset = (@cycle - 1) - @sprite_positions[i]
+        next if offset < 0 || offset > 7
+        offset = 7 - offset
+        color = ((@sprite_patterns[i] >> (offset * 4)) & 0x0000000F)
+        next if (color % 4) == 0
+        return [i, 0x3F00_u16 | ((color | 0x10) % 64)]
       end
 
-      pal_idx = @bus.read(0x3F00_u16 | (bg_palette << 2) | bg_pixel) &
-        (@mask.greyscale == 1 ? 0x30 : 0x3F)
-      @pixel_buffer[x + (y * MAX_HEIGHT)] = @palette.fetch(pal_idx)
+      [0_u8, 0_u16]
     end
 
     private def fetch_nametable_byte
@@ -203,6 +246,76 @@ module CrystalNes
                                  ((@bg_attribute_table_byte & 0b01) > 0 ? 0xFF_u16 : 0_u16)
       @bg_attribute_shifter_hi = (@bg_attribute_shifter_hi & 0xFF00) |
                                  ((@bg_attribute_table_byte & 0b10) > 0 ? 0xFF_u16 : 0_u16)
+    end
+
+    private def sprite_evaluation
+      height = @control.sprite_height == 0 ? 8 : 16
+      @sprite_count = 0
+
+      64.times do |i|
+        y = @oam[i*4+0]
+        tile = @oam[i*4+1]
+        attr = @oam[i*4+2]
+        x = @oam[i*4+3]
+        row = @scanline - y
+        next if row < 0 || row >= height
+        if @sprite_count < 8
+          @sprite_patterns[@sprite_count] =
+            fetch_sprite_pattern(tile, attr, row, height)
+          @sprite_positions[@sprite_count] = x
+          @sprite_priorities[@sprite_count] = attr.bit(5)
+          @sprite_indexes[@sprite_count] = i.to_u8
+        end
+        @sprite_count += 1
+      end
+
+      if @sprite_count > 8
+        @sprite_count = 8
+        @status.sprite_overflow = 1
+      else
+        @status.sprite_overflow = 0
+      end
+    end
+
+    private def fetch_sprite_pattern(tile, attributes, row, sprite_height)
+      address =
+        if sprite_height == 8
+          row = 7 - row if attributes.bit(7) == 1
+          table = @control.sprite_tile
+          (0x1000_u16 * table.to_u16) + (tile.to_u16 * 16) + row.to_u16
+        else
+          row = 15 - row if attributes.bit(7) == 1
+          table = tile.bit(0)
+          tile &= 0xFE
+          if row > 7
+            tile &+= 1
+            row -= 8
+          end
+          (0x1000_u16 * table.to_u16) + (tile.to_u16 * 16) + row.to_u16
+        end
+
+      a = attributes.bits(0..1) << 2
+      low_tile = @bus.read(address)
+      high_tile = @bus.read(address + 8)
+      data = 0_u32
+      8.times do |i|
+        pixel0 = pixel1 = 0_u8
+        if attributes.bit(6) == 1
+          pixel0 = low_tile.bit(0) << 0
+          pixel1 = high_tile.bit(0) << 1
+          low_tile >>= 1
+          high_tile >>= 1
+        else
+          pixel0 = low_tile.bit(7) << 0
+          pixel1 = high_tile.bit(7) << 1
+          low_tile <<= 1
+          high_tile <<= 1
+        end
+
+        data <<= 4
+        data |= (a.to_u32 | pixel0.to_u32 | pixel1.to_u32)
+      end
+      data
     end
 
     private def increment_scroll_x

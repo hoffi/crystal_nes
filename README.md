@@ -10,7 +10,7 @@ A NES Emulator written in [Crystal](https://crystal-lang.org)
 - [x] Controller
 - [ ] PPU
   - [x] Basic background rendering
-  - [ ] Sprite rendering
+  - [x] Sprite rendering
   - [ ] Correct timings
 - [ ] APU
 - [ ] Mappers
