@@ -39,21 +39,30 @@ module CrystalNes
           @run = !@run
         elsif LibRay.key_pressed?(LibRay::KEY_R)
           @console.reset!
-        elsif LibRay.key_down?(LibRay::KEY_Y) || LibRay.key_down?(LibRay::KEY_Z)
+        end
+
+        if LibRay.key_down?(LibRay::KEY_Y) || LibRay.key_down?(LibRay::KEY_Z)
           controller.press_button!(0, Button::A)
-        elsif LibRay.key_down?(LibRay::KEY_X)
+        end
+        if LibRay.key_down?(LibRay::KEY_X)
           controller.press_button!(0, Button::B)
-        elsif LibRay.key_down?(LibRay::KEY_A)
+        end
+        if LibRay.key_down?(LibRay::KEY_A)
           controller.press_button!(0, Button::Select)
-        elsif LibRay.key_down?(LibRay::KEY_S)
+        end
+        if LibRay.key_down?(LibRay::KEY_S)
           controller.press_button!(0, Button::Start)
-        elsif LibRay.key_down?(LibRay::KEY_UP)
+        end
+        if LibRay.key_down?(LibRay::KEY_UP)
           controller.press_button!(0, Button::Up)
-        elsif LibRay.key_down?(LibRay::KEY_DOWN)
+        end
+        if LibRay.key_down?(LibRay::KEY_DOWN)
           controller.press_button!(0, Button::Down)
-        elsif LibRay.key_down?(LibRay::KEY_LEFT)
+        end
+        if LibRay.key_down?(LibRay::KEY_LEFT)
           controller.press_button!(0, Button::Left)
-        elsif LibRay.key_down?(LibRay::KEY_RIGHT)
+        end
+        if LibRay.key_down?(LibRay::KEY_RIGHT)
           controller.press_button!(0, Button::Right)
         end
       end
