@@ -73,7 +73,7 @@ module CrystalNes
       end
 
       def load_indirect_y(page_cross_cycles = true) # or "Indirect Indexed"
-        value = read16(load_zero_page)
+        value = read16_bug(load_zero_page)
         real_value = value &+ @y
         if page_cross_cycles && page_crossed?(value, real_value)
           @cycles += 1

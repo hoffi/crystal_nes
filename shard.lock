@@ -1,18 +1,18 @@
-version: 1.0
+version: 2.0
 shards:
   bindata:
-    github: spider-gazelle/bindata
-    version: 1.2.0
+    git: https://github.com/spider-gazelle/bindata.git
+    version: 1.5.5
 
   bitfields:
-    github: elorest/bitfields
+    git: https://github.com/elorest/bitfields.git
     version: 0.31.1
 
   cray:
-    gitlab: zatherz/cray
-    commit: 56c4d0b3fac626625604a4a96f16e25546fb1506
+    git: https://gitlab.com/zatherz/cray.git
+    version: 0.1.0+git.commit.56c4d0b3fac626625604a4a96f16e25546fb1506
 
   debug:
-    github: Sija/debug.cr
+    git: https://github.com/Sija/debug.cr.git
     version: 1.1.0
 

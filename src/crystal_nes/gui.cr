@@ -13,17 +13,8 @@ module CrystalNes
       @console.on_swap_pixel_buffer do |raw_buffer|
         cray_color_buffer = raw_buffer.map { |c| LibRay.get_color(c) }
         LibRay.update_texture(@game_view.texture, cray_color_buffer)
-      end
-    end
-
-    def main_loop
-      controller = @console.controller
-
-      while !LibRay.window_should_close?
-        @console.step_by_frame if @run
 
         LibRay.begin_drawing
-        LibRay.clear_background(LibRay::BLACK)
         LibRay.draw_texture_ex(
           @game_view.texture,
           LibRay::Vector2.new(x: 0, y: 0),
@@ -32,6 +23,18 @@ module CrystalNes
           LibRay::WHITE
         )
         LibRay.end_drawing
+      end
+    end
+
+    def main_loop
+      controller = @console.controller
+
+      LibRay.begin_drawing
+      LibRay.clear_background(LibRay::BLACK)
+      LibRay.end_drawing
+
+      while !LibRay.window_should_close?
+        @console.step_by_frame if @run
 
         controller.reset!
 
