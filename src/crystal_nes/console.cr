@@ -27,6 +27,7 @@ module CrystalNes
       rom_data = File.open(rom_path, "rb").read_bytes(FileFormats::Nes)
       @mapper.prepare_mapper(rom_data)
       @cpu.power_up!
+      @ppu.power_up!
     end
 
     def step

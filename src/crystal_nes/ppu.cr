@@ -65,6 +65,10 @@ module CrystalNes
       @bg_attribute_shifter_hi = 0_u16
     end
 
+    def power_up!
+      @bus.power_up!
+    end
+
     def step
       # "Odd Frame", skip cycle
       return @cycle = 1 if @frame_toggle && @scanline == 0 && @cycle == 0
